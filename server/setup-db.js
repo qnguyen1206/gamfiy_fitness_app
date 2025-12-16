@@ -1,41 +1,38 @@
-import mysql from 'mysql2/promise';
+import pg from 'pg';
 import dotenv from 'dotenv';
 import fs from 'fs';
 
 dotenv.config();
 
+const { Client } = pg;
+
 async function setupDatabase() {
-  console.log('Setting up database...');
+  console.log('Setting up Neon PostgreSQL database...');
   
   try {
-    const connection = await mysql.createConnection({
-      host: process.env.DB_HOST,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      database: process.env.DB_NAME,
-      port: process.env.DB_PORT || 3306
+    const client = new Client({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
     });
 
+    await client.connect();
     console.log('✅ Connected to database');
 
     // Read and execute SQL file
     const sql = fs.readFileSync('./database.sql', 'utf8');
-    const statements = sql.split(';').filter(stmt => stmt.trim());
-
-    for (const statement of statements) {
-      if (statement.trim()) {
-        await connection.query(statement);
-        console.log('✅ Executed:', statement.trim().substring(0, 50) + '...');
-      }
-    }
+    
+    // Execute the entire SQL at once (PostgreSQL supports this)
+    await client.query(sql);
+    console.log('✅ Database schema created successfully');
 
     console.log('\n✅ Database setup complete!');
     console.log('You can now start the server with: npm run dev');
     
-    await connection.end();
+    await client.end();
     process.exit(0);
   } catch (error) {
     console.error('❌ Setup failed:', error.message);
+    console.error('   Make sure your DATABASE_URL is correct in .env');
     process.exit(1);
   }
 }
