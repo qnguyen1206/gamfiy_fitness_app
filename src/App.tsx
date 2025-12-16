@@ -1,313 +1,445 @@
-import React, { useState } from 'react';
-import { Dumbbell, Brain, Heart, ChevronDown, ChevronUp, HelpCircle } from 'lucide-react';
-
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-import { getFirestore, collection, addDoc, getDocs, query, where } from "firebase/firestore";
-import { v4 as uuidv4 } from 'uuid';
-
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-const db = getFirestore(app);
-
-const getUserId = () => {
-  let userId = localStorage.getItem("userId");
-  if (!userId) {
-    userId = uuidv4();
-    localStorage.setItem("userId", userId);
-  }
-  return userId;
-};
-
-const userId = getUserId();
-
+import React, { useState, useEffect } from 'react';
+import { Dumbbell, Brain, Heart, Camera, LogOut, Star } from 'lucide-react';
+import ExerciseDetector from './ExerciseDetector';
+import CharacterLogin from './CharacterLogin';
+import DailyQuests from './DailyQuests';
+import FitnessTest from './FitnessTest';
+import { api } from './api';
 
 interface Stats {
   strength: number;
   intelligence: number;
   endurance: number;
+  exp: number;
+  level: number;
+}
+
+interface Quest {
+  id: string;
+  title: string;
+  description: string;
+  target: number;
+  current: number;
+  completed: boolean;
+  rewards: {
+    exp: number;
+    strength: number;
+    endurance: number;
+  };
+}
+
+interface DailyQuestData {
+  userId: number;
+  date: string;
+  quests: Quest[];
+}
+
+interface User {
+  id: number;
+  username: string;
+}
+
+interface UserStats {
+  userId: number;
+  stats: Stats;
 }
 
 function App() {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [stats, setStats] = useState<Stats>({
     strength: 0,
     intelligence: 0,
     endurance: 0,
+    exp: 0,
+    level: 1,
   });
-  const addStat = async () => {
+
+  const [showDetector, setShowDetector] = useState<'pushup' | 'situp' | null>(null);
+  const [dailyQuests, setDailyQuests] = useState<Quest[]>([]);
+  const [needsFitnessTest, setNeedsFitnessTest] = useState(false);
+
+  // Calculate level from EXP
+  const calculateLevel = (exp: number): number => {
+    let level = 1;
+    let totalExpNeeded = 0;
+    
+    while (true) {
+      const expForNextLevel = level * 100;
+      if (totalExpNeeded + expForNextLevel > exp) {
+        break;
+      }
+      totalExpNeeded += expForNextLevel;
+      level++;
+    }
+    
+    return level;
+  };
+
+  // Get EXP needed for current level
+  const getExpForLevel = (level: number): number => {
+    let total = 0;
+    for (let i = 1; i < level; i++) {
+      total += i * 100;
+    }
+    return total;
+  };
+
+  // Get EXP needed for next level
+  const getExpForNextLevel = (currentLevel: number): number => {
+    return currentLevel * 100;
+  };
+
+  // Update level whenever exp changes
+  useEffect(() => {
+    const newLevel = calculateLevel(stats.exp);
+    if (newLevel !== stats.level) {
+      setStats(prev => ({ ...prev, level: newLevel }));
+    }
+  }, [stats.exp]);
+
+  // Initialize daily quests
+  const initializeDailyQuests = (): Quest[] => {
+    return [
+      {
+        id: 'pushups',
+        title: 'Push-up Master',
+        description: 'Complete 100 push-ups today',
+        target: 100,
+        current: 0,
+        completed: false,
+        rewards: { exp: 1, strength: 1, endurance: 1 }
+      },
+      {
+        id: 'situps',
+        title: 'Sit-up Champion',
+        description: 'Complete 100 sit-ups today',
+        target: 100,
+        current: 0,
+        completed: false,
+        rewards: { exp: 1, strength: 1, endurance: 1 }
+      }
+    ];
+  };
+
+  // Load user stats and daily quests when user logs in
+  useEffect(() => {
+    if (currentUser) {
+      loadUserData();
+    }
+  }, [currentUser]);
+
+  const loadUserData = async () => {
+    if (!currentUser) return;
+
     try {
-      await addDoc(collection(db, "stats"), {
-        userId,
-        strength: stats.strength,
-        intelligence: stats.intelligence,
-        endurance: stats.endurance,
-        timestamp: new Date()
+      // Load stats from API
+      const statsData = await api.getStats(currentUser.id);
+      setStats({
+        strength: statsData.strength || 0,
+        intelligence: statsData.intelligence || 0,
+        endurance: statsData.endurance || 0,
+        exp: statsData.exp || 0,
+        level: statsData.level || 1
       });
-      console.log("Stats saved!");
-    } catch (e) {
-      console.error("Error adding document: ", e);
+
+      // Check if new user (no stats yet)
+      if (statsData.strength === 0 && statsData.endurance === 0 && statsData.exp === 0) {
+        setNeedsFitnessTest(true);
+        return; // Don't load quests yet
+      }
+
+      // Load daily quests from API
+      const questsData = await api.getQuests(currentUser.id);
+      
+      // Merge API data with quest definitions
+      const questDefinitions = initializeDailyQuests();
+      const mergedQuests = questDefinitions.map(def => {
+        const savedQuest = questsData.find((q: any) => q.quest_id === def.id);
+        if (savedQuest) {
+          return {
+            ...def,
+            current: savedQuest.current_progress,
+            completed: savedQuest.completed
+          };
+        }
+        return def;
+      });
+      
+      setDailyQuests(mergedQuests);
+    } catch (error) {
+      console.error('Error loading user data:', error);
+      // Initialize with defaults on error
+      setStats({ strength: 0, intelligence: 0, endurance: 0, exp: 0, level: 1 });
+      setDailyQuests(initializeDailyQuests());
     }
   };
 
-  const fetchStats = async () => {
-    const statsQuery = query(collection(db, "stats"), where("userId", "==", userId));
-    const querySnapshot = await getDocs(statsQuery);
-    querySnapshot.forEach((doc) => {
-      console.log(doc.id, " => ", doc.data());
-    });
+  // Save stats whenever they change
+  useEffect(() => {
+    if (currentUser && stats.level > 0) {
+      api.updateStats(currentUser.id, stats).catch(err => {
+        console.error('Failed to save stats:', err);
+      });
+    }
+  }, [stats, currentUser]);
+
+  // Save daily quests whenever they change
+  useEffect(() => {
+    if (currentUser && dailyQuests.length > 0) {
+      dailyQuests.forEach(quest => {
+        api.updateQuest(currentUser.id, quest.id, {
+          currentProgress: quest.current,
+          completed: quest.completed
+        }).catch(err => {
+          console.error('Failed to save quest:', err);
+        });
+      });
+    }
+  }, [dailyQuests, currentUser]);
+
+  const handleExerciseFinish = (type: 'pushup' | 'situp', count: number) => {
+    if (count > 0) {
+      const strengthGain = count * 0.1;
+      const enduranceGain = Math.floor(count / 10) * 0.1;
+      
+      // Update stats
+      setStats(prev => ({
+        ...prev,
+        strength: prev.strength + strengthGain,
+        endurance: prev.endurance + enduranceGain
+      }));
+      
+      // Update daily quest progress
+      const questId = type === 'pushup' ? 'pushups' : 'situps';
+      setDailyQuests(prev => {
+        return prev.map(quest => {
+          if (quest.id === questId && !quest.completed) {
+            const newCurrent = quest.current + count;
+            const nowCompleted = newCurrent >= quest.target && !quest.completed;
+            
+            // Award quest rewards if just completed
+            if (nowCompleted) {
+              setStats(prevStats => ({
+                ...prevStats,
+                exp: prevStats.exp + quest.rewards.exp,
+                strength: prevStats.strength + quest.rewards.strength,
+                endurance: prevStats.endurance + quest.rewards.endurance
+              }));
+            }
+            
+            return {
+              ...quest,
+              current: newCurrent,
+              completed: newCurrent >= quest.target
+            };
+          }
+          return quest;
+        });
+      });
+      
+      const exerciseName = type === 'pushup' ? 'push-ups' : 'sit-ups';
+      const gains = [
+        `+${strengthGain.toFixed(1)} Strength`,
+        enduranceGain > 0 ? `+${enduranceGain.toFixed(1)} Endurance` : null
+      ].filter(Boolean).join(', ');
+      
+      // Check if quest was just completed
+      const quest = dailyQuests.find(q => q.id === questId);
+      const questCompleted = quest && !quest.completed && (quest.current + count) >= quest.target;
+      
+      let message = `Great job! You completed ${count} ${exerciseName}!\n${gains}`;
+      if (questCompleted) {
+        message += `\n\n🎉 Quest Completed! +${quest.rewards.exp} EXP, +${quest.rewards.strength} STR, +${quest.rewards.endurance} END`;
+      }
+      
+      alert(message);
+    }
   };
-  
 
-  const [inputs, setInputs] = useState({
-    weightLifted: 0,
-    reps: 0,
-    homeworkCompleted: 0,
-    milesRun: 0,
-  });
-
-  const [openSection, setOpenSection] = useState<string | null>(null);
-
-  const toggleSection = (section: string) => {
-    setOpenSection(openSection === section ? null : section);
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setStats({ strength: 0, intelligence: 0, endurance: 0, exp: 0, level: 1 });
+    setDailyQuests([]);
+    setNeedsFitnessTest(false);
   };
 
-  const calculateStrength = () => {
-    const newReps = Math.floor((inputs.weightLifted / 5) * inputs.reps);
-    setStats(prev => ({ ...prev, strength: prev.strength + newReps }));
+  const handleStartDetection = (questId: string) => {
+    if (questId === 'pushups') {
+      setShowDetector('pushup');
+    } else if (questId === 'situps') {
+      setShowDetector('situp');
+    }
   };
 
-  const calculateIntelligence = () => {
-    setStats(prev => ({ ...prev, intelligence: prev.intelligence + inputs.homeworkCompleted }));
+  const handleFitnessTestComplete = async (testStats: { strength: number; endurance: number }) => {
+    if (!currentUser) return;
+
+    // Update stats with test results
+    const newStats = {
+      strength: testStats.strength,
+      intelligence: 0,
+      endurance: testStats.endurance,
+      exp: 0,
+      level: 1
+    };
+
+    setStats(newStats);
+    
+    // Save to database
+    try {
+      await api.updateStats(currentUser.id, newStats);
+      setNeedsFitnessTest(false);
+      // Now load quests
+      const questsData = await api.getQuests(currentUser.id);
+      const questDefinitions = initializeDailyQuests();
+      const mergedQuests = questDefinitions.map(def => {
+        const savedQuest = questsData.find((q: any) => q.quest_id === def.id);
+        if (savedQuest) {
+          return {
+            ...def,
+            current: savedQuest.current_progress,
+            completed: savedQuest.completed
+          };
+        }
+        return def;
+      });
+      setDailyQuests(mergedQuests);
+    } catch (error) {
+      console.error('Failed to save test results:', error);
+    }
   };
 
-  const calculateEndurance = () => {
-    const enduranceFromLifting = Math.floor((inputs.weightLifted / 5) * Math.floor(inputs.reps / 20));
-    const enduranceFromRunning = inputs.milesRun;
-    setStats(prev => ({ ...prev, endurance: prev.endurance + enduranceFromLifting + enduranceFromRunning }));
-  };
+  if (!currentUser) {
+    return <CharacterLogin onLogin={setCurrentUser} />;
+  }
+
+  if (needsFitnessTest) {
+    return (
+      <FitnessTest
+        onComplete={handleFitnessTestComplete}
+        username={currentUser.username}
+      />
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-white text-black p-8">
-      <div className="max-w-4xl mx-auto space-y-8">
-        <h1 className="text-4xl font-bold text-center mb-8">Fitness Tracker</h1>
+    <div className="min-h-screen bg-gray-100 text-black">
+      <div className="flex flex-col lg:flex-row min-h-screen">
+        {/* Left Sidebar - Character Info (Blue) */}
+        <div className="lg:w-80 bg-blue-50 border-r-4 border-blue-300 p-6 space-y-6">
+          <div className="bg-white rounded-lg p-4 shadow-md border-2 border-blue-200">
+            <h2 className="text-xl font-bold text-blue-800 mb-2">Character</h2>
+            <p className="text-gray-700">
+              <span className="font-semibold text-blue-600">{currentUser.username}</span>
+            </p>
+            <p className="text-sm text-gray-600">ID: {currentUser.id}</p>
+          </div>
 
-        <button onClick={addStat} className="bg-blue-500 text-white px-4 py-2 rounded">Save Stats</button>
-        <button onClick={fetchStats} className="bg-green-500 text-white px-4 py-2 rounded ml-4">Fetch Stats</button>
-        
-        {/* Stats Display */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <StatCard icon={<Dumbbell size={24} />} title="Strength" value={stats.strength} unit="points" />
-          <StatCard icon={<Brain size={24} />} title="Intelligence" value={stats.intelligence} unit="points" />
-          <StatCard icon={<Heart size={24} />} title="Endurance" value={stats.endurance} unit="points" />
+          {/* Level Progress */}
+          <div className="bg-white rounded-lg p-4 shadow-md border-2 border-purple-200">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-2xl font-bold text-purple-800">Level {stats.level}</h2>
+              <span className="text-sm font-semibold text-purple-600">
+                {stats.exp - getExpForLevel(stats.level)} / {getExpForNextLevel(stats.level)}
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
+                style={{
+                  width: `${((stats.exp - getExpForLevel(stats.level)) / getExpForNextLevel(stats.level)) * 100}%`
+                }}
+              />
+            </div>
+            <p className="text-xs text-gray-600 mt-2">
+              {getExpForNextLevel(stats.level) - (stats.exp - getExpForLevel(stats.level))} EXP to Level {stats.level + 1}
+            </p>
+          </div>
+
+          {/* Stats */}
+          <div className="space-y-3">
+            <h3 className="text-lg font-bold text-gray-800">Stats</h3>
+            <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Dumbbell size={20} className="text-red-500" />
+                  <span className="font-semibold">Strength</span>
+                </div>
+                <span className="text-lg font-bold">{(stats.strength || 0).toFixed(1)}</span>
+              </div>
+            </div>
+            <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Brain size={20} className="text-purple-500" />
+                  <span className="font-semibold">Intelligence</span>
+                </div>
+                <span className="text-lg font-bold">{(stats.intelligence || 0).toFixed(1)}</span>
+              </div>
+            </div>
+            <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Heart size={20} className="text-green-500" />
+                  <span className="font-semibold">Endurance</span>
+                </div>
+                <span className="text-lg font-bold">{(stats.endurance || 0).toFixed(1)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Practice Mode */}
+          <div className="bg-white rounded-lg p-4 shadow-md border-2 border-green-200">
+            <h3 className="text-lg font-bold text-green-800 mb-3 flex items-center gap-2">
+              <Camera size={20} />
+              Practice
+            </h3>
+            <div className="space-y-2">
+              <button
+                onClick={() => setShowDetector('pushup')}
+                className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-semibold text-sm transition-colors"
+              >
+                Push-ups
+              </button>
+              <button
+                onClick={() => setShowDetector('situp')}
+                className="w-full bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 font-semibold text-sm transition-colors"
+              >
+                Sit-ups
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* Input Forms */}
-        <div className="space-y-4">
-          {/* Strength Form */}
-          <div className="bg-gray-50 rounded-lg overflow-hidden">
-            <button 
-              onClick={() => toggleSection('strength')}
-              className="w-full p-4 flex items-center justify-between text-left hover:bg-gray-100 transition-colors"
+        {/* Main Content Area - Daily Quests (Red) */}
+        <div className="flex-1 relative">
+          {/* Logout Button (Yellow) */}
+          <div className="absolute top-4 right-4 z-10">
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-6 py-3 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 transition-colors shadow-lg font-semibold border-2 border-yellow-600"
             >
-              <div className="flex items-center gap-3">
-                <Dumbbell size={20} />
-                <h2 className="text-xl font-semibold">Track Strength</h2>
-                <div className="group relative">
-                  <HelpCircle size={16} className="text-gray-400" />
-                  <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                    1 rep / 5 lbs = 1 strength point
-                  </div>
-                </div>
-              </div>
-              {openSection === 'strength' ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+              <LogOut size={20} />
+              Logout
             </button>
-            {openSection === 'strength' && (
-              <div className="p-6 border-t">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label htmlFor="weightLifted" className="block text-sm text-gray-600">
-                      Weight (lbs)
-                    </label>
-                    <input
-                      id="weightLifted"
-                      type="number"
-                      placeholder="Enter weight in pounds"
-                      className="p-2 border rounded w-full"
-                      value={inputs.weightLifted}
-                      onChange={(e) => setInputs(prev => ({ ...prev, weightLifted: Number(e.target.value) }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label htmlFor="strengthReps" className="block text-sm text-gray-600">
-                      Number of Reps
-                    </label>
-                    <input
-                      id="strengthReps"
-                      type="number"
-                      placeholder="Enter number of reps"
-                      className="p-2 border rounded w-full"
-                      value={inputs.reps}
-                      onChange={(e) => setInputs(prev => ({ ...prev, reps: Number(e.target.value) }))}
-                    />
-                  </div>
-                </div>
-                <button
-                  onClick={calculateStrength}
-                  className="mt-4 bg-black text-white px-4 py-2 rounded hover:bg-gray-800"
-                >
-                  Log Strength
-                </button>
-              </div>
-            )}
           </div>
 
-          {/* Intelligence Form */}
-          <div className="bg-gray-50 rounded-lg overflow-hidden">
-            <button 
-              onClick={() => toggleSection('intelligence')}
-              className="w-full p-4 flex items-center justify-between text-left hover:bg-gray-100 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Brain size={20} />
-                <h2 className="text-xl font-semibold">Track Intelligence</h2>
-                <div className="group relative">
-                  <HelpCircle size={16} className="text-gray-400" />
-                  <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                    1 homework = 1 intelligence point
-                  </div>
-                </div>
-              </div>
-              {openSection === 'intelligence' ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-            </button>
-            {openSection === 'intelligence' && (
-              <div className="p-6 border-t">
-                <div className="space-y-2">
-                  <label htmlFor="homework" className="block text-sm text-gray-600">
-                    Homework Assignments Completed
-                  </label>
-                  <input
-                    id="homework"
-                    type="number"
-                    placeholder="Enter number of assignments"
-                    className="p-2 border rounded w-full"
-                    value={inputs.homeworkCompleted}
-                    onChange={(e) => setInputs(prev => ({ ...prev, homeworkCompleted: Number(e.target.value) }))}
-                  />
-                </div>
-                <button
-                  onClick={calculateIntelligence}
-                  className="mt-4 bg-black text-white px-4 py-2 rounded hover:bg-gray-800"
-                >
-                  Log Intelligence
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Endurance Form */}
-          <div className="bg-gray-50 rounded-lg overflow-hidden">
-            <button 
-              onClick={() => toggleSection('endurance')}
-              className="w-full p-4 flex items-center justify-between text-left hover:bg-gray-100 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Heart size={20} />
-                <h2 className="text-xl font-semibold">Track Endurance</h2>
-                <div className="group relative">
-                  <HelpCircle size={16} className="text-gray-400" />
-                  <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                    4 sets / 20 reps / 5 lbs = 1 endurance point<br />
-                    1 mile run = 1 endurance point
-                  </div>
-                </div>
-              </div>
-              {openSection === 'endurance' ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-            </button>
-            {openSection === 'endurance' && (
-              <div className="p-6 border-t">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <label htmlFor="enduranceWeight" className="block text-sm text-gray-600">
-                      Weight (lbs)
-                    </label>
-                    <input
-                      id="enduranceWeight"
-                      type="number"
-                      placeholder="Enter weight in pounds"
-                      className="p-2 border rounded w-full"
-                      value={inputs.weightLifted}
-                      onChange={(e) => setInputs(prev => ({ ...prev, weightLifted: Number(e.target.value) }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label htmlFor="enduranceReps" className="block text-sm text-gray-600">
-                      Number of Reps
-                    </label>
-                    <input
-                      id="enduranceReps"
-                      type="number"
-                      placeholder="Enter number of reps"
-                      className="p-2 border rounded w-full"
-                      value={inputs.reps}
-                      onChange={(e) => setInputs(prev => ({ ...prev, reps: Number(e.target.value) }))}
-                    />
-                  </div>
-                  <br></br>
-                  <div className="space-y-2">
-                    <label htmlFor="milesRun" className="block text-sm text-gray-600">
-                      Distance Run (miles)
-                    </label>
-                    <input
-                      id="milesRun"
-                      type="number"
-                      placeholder="Enter miles run"
-                      className="p-2 border rounded w-full"
-                      value={inputs.milesRun}
-                      onChange={(e) => setInputs(prev => ({ ...prev, milesRun: Number(e.target.value) }))}
-                    />
-                  </div>
-                </div>
-                <button
-                  onClick={calculateEndurance}
-                  className="mt-4 bg-black text-white px-4 py-2 rounded hover:bg-gray-800"
-                >
-                  Log Endurance
-                </button>
-              </div>
-            )}
+          <div className="p-8 pt-20 max-w-5xl mx-auto space-y-6">
+            <h1 className="text-4xl font-bold text-gray-800">Fitness Tracker</h1>
+            
+            <DailyQuests quests={dailyQuests} onStartDetection={handleStartDetection} />
           </div>
         </div>
       </div>
-    </div>
-  );
-}
 
-function StatCard({ icon, title, value, unit }: { icon: React.ReactNode; title: string; value: number; unit: string }) {
-  return (
-    <div className="bg-gray-50 p-6 rounded-lg">
-      <div className="flex items-center gap-3 mb-2">
-        {icon}
-        <h2 className="text-xl font-semibold">{title}</h2>
-      </div>
-      <p className="text-3xl font-bold">{value} <span className="text-lg font-normal text-gray-600">{unit}</span></p>
+      {showDetector && (
+        <ExerciseDetector
+          exerciseType={showDetector}
+          onCountUpdate={() => {}}
+          onFinish={(count) => handleExerciseFinish(showDetector, count)}
+          onClose={() => setShowDetector(null)}
+        />
+      )}
     </div>
   );
 }
