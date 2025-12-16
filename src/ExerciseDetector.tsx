@@ -22,6 +22,7 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
   const detectorRef = useRef<poseDetection.PoseDetector | null>(null);
   const animationFrameRef = useRef<number>();
   const exerciseStateRef = useRef<'up' | 'down'>('up');
+  const isPrimedRef = useRef(false);
   const confidenceThreshold = 0.5; // Minimum confidence for keypoint detection
 
   useEffect(() => {
@@ -157,8 +158,17 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
               );
               const avgAngle = (leftArmAngle + rightArmAngle) / 2;
 
+              // Prime the detector when in up position
+              if (avgAngle > 160 && !isPrimedRef.current) {
+                isPrimedRef.current = true;
+                setStatus('Primed! Start your push-ups');
+                setFormFeedback('💪 Ready to start!');
+              }
+
               // Form feedback
-              if (Math.abs(leftArmAngle - rightArmAngle) > 30) {
+              if (!isPrimedRef.current) {
+                setFormFeedback('✋ Start in the up position (arms extended)');
+              } else if (Math.abs(leftArmAngle - rightArmAngle) > 30) {
                 setFormFeedback('⚠️ Keep arms balanced');
               } else if (avgAngle < 160 && avgAngle > 100) {
                 setFormFeedback('💪 Good form!');
@@ -166,10 +176,10 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
                 setFormFeedback('');
               }
 
-              if (avgAngle < 100 && exerciseStateRef.current === 'up') {
+              if (avgAngle < 100 && exerciseStateRef.current === 'up' && isPrimedRef.current) {
                 exerciseStateRef.current = 'down';
                 setStatus('Down position');
-              } else if (avgAngle > 160 && exerciseStateRef.current === 'down') {
+              } else if (avgAngle > 160 && exerciseStateRef.current === 'down' && isPrimedRef.current) {
                 exerciseStateRef.current = 'up';
                 countRef.current += 1;
                 const newCount = countRef.current;
@@ -193,7 +203,16 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
                 { x: leftKnee.x, y: leftKnee.y }
               );
 
-              if (bodyAngle < 50 && exerciseStateRef.current === 'up') {
+              // Prime the detector when lying down
+              if (bodyAngle < 50 && !isPrimedRef.current) {
+                isPrimedRef.current = true;
+                setStatus('Primed! Start your sit-ups');
+                setFormFeedback('💪 Ready to start!');
+              }
+
+              if (!isPrimedRef.current) {
+                setFormFeedback('✋ Start by lying down (back flat)');
+              } else if (bodyAngle < 50 && exerciseStateRef.current === 'up') {
                 exerciseStateRef.current = 'down';
                 setStatus('Down position');
                 setFormFeedback('');
@@ -236,7 +255,16 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
               );
               const avgAngle = (leftLegAngle + rightLegAngle) / 2;
 
-              if (avgAngle < 110 && avgAngle > 70) {
+              // Prime the detector when standing up
+              if (avgAngle > 160 && !isPrimedRef.current) {
+                isPrimedRef.current = true;
+                setStatus('Primed! Start your squats');
+                setFormFeedback('💪 Ready to start!');
+              }
+
+              if (!isPrimedRef.current) {
+                setFormFeedback('✋ Start by standing up straight');
+              } else if (avgAngle < 110 && avgAngle > 70) {
                 setFormFeedback('💪 Good depth!');
               } else if (avgAngle < 70) {
                 setFormFeedback('⚠️ Too low - protect your knees');
@@ -244,10 +272,10 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
                 setFormFeedback('');
               }
 
-              if (avgAngle < 110 && exerciseStateRef.current === 'up') {
+              if (avgAngle < 110 && exerciseStateRef.current === 'up' && isPrimedRef.current) {
                 exerciseStateRef.current = 'down';
                 setStatus('Squat down');
-              } else if (avgAngle > 160 && exerciseStateRef.current === 'down') {
+              } else if (avgAngle > 160 && exerciseStateRef.current === 'down' && isPrimedRef.current) {
                 exerciseStateRef.current = 'up';
                 countRef.current += 1;
                 const newCount = countRef.current;
@@ -269,7 +297,11 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
 
               // Plank is held when body is straight (160-180 degrees)
               if (bodyAngle > 160 && bodyAngle < 200) {
-                if (exerciseStateRef.current === 'up') {
+                if (!isPrimedRef.current) {
+                  isPrimedRef.current = true;
+                  setFormFeedback('💪 Plank detected! Hold it!');
+                }
+                if (exerciseStateRef.current === 'up' && isPrimedRef.current) {
                   exerciseStateRef.current = 'down';
                   countRef.current += 1;
                   const newCount = countRef.current;
@@ -278,8 +310,13 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
                 }
                 setStatus('Holding plank...');
               } else {
-                exerciseStateRef.current = 'up';
-                setStatus('Get into plank position');
+                if (!isPrimedRef.current) {
+                  setFormFeedback('✋ Get into plank position to start');
+                  setStatus('Position yourself in plank');
+                } else {
+                  exerciseStateRef.current = 'up';
+                  setStatus('Get into plank position');
+                }
               }
             }
           } else if (exerciseType === 'lunge') {
@@ -295,10 +332,21 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
                 { x: leftKnee.x, y: leftKnee.y + 100 }
               );
 
-              if (leftLegAngle < 100 && exerciseStateRef.current === 'up') {
+              // Prime the detector when standing up
+              if (leftLegAngle > 160 && !isPrimedRef.current) {
+                isPrimedRef.current = true;
+                setStatus('Primed! Start your lunges');
+                setFormFeedback('💪 Ready to start!');
+              }
+
+              if (!isPrimedRef.current) {
+                setFormFeedback('✋ Start by standing up straight');
+              }
+
+              if (leftLegAngle < 100 && exerciseStateRef.current === 'up' && isPrimedRef.current) {
                 exerciseStateRef.current = 'down';
                 setStatus('Lunge down');
-              } else if (leftLegAngle > 160 && exerciseStateRef.current === 'down') {
+              } else if (leftLegAngle > 160 && exerciseStateRef.current === 'down' && isPrimedRef.current) {
                 exerciseStateRef.current = 'up';
                 countRef.current += 1;
                 const newCount = countRef.current;
@@ -332,12 +380,17 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
 
               if (wristAboveShoulder && armAngle > 140) {
                 setFormFeedback('⚔️ Ready to strike!');
+                // Prime the detector - user has raised their arm
+                if (!isPrimedRef.current) {
+                  isPrimedRef.current = true;
+                  setStatus('Primed! Strike down to count');
+                }
               }
 
               if (wristAboveShoulder && exerciseStateRef.current === 'down') {
                 exerciseStateRef.current = 'up';
                 setStatus('Raised - ready!');
-              } else if (wristBelowShoulder && exerciseStateRef.current === 'up') {
+              } else if (wristBelowShoulder && exerciseStateRef.current === 'up' && isPrimedRef.current) {
                 exerciseStateRef.current = 'down';
                 countRef.current += 1;
                 const newCount = countRef.current;
@@ -345,6 +398,8 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
                 onCountUpdate(newCount);
                 setStatus(`Strike ${newCount}!`);
                 setFormFeedback('💥 Good strike!');
+              } else if (!isPrimedRef.current) {
+                setFormFeedback('✋ Raise your arm above your head to start');
               }
             } else {
               setFormFeedback('📷 Stand side-facing to camera');

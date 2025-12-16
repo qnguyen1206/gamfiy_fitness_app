@@ -54,7 +54,8 @@ function App() {
     level: 1,
   });
 
-  const [showDetector, setShowDetector] = useState<'pushup' | 'situp' | null>(null);
+  const [showDetector, setShowDetector] = useState<'pushup' | 'situp' | 'squat' | 'plank' | 'lunge' | 'swordstrike' | null>(null);
+  const [showExerciseModal, setShowExerciseModal] = useState(false);
   const [dailyQuests, setDailyQuests] = useState<Quest[]>([]);
   const [needsFitnessTest, setNeedsFitnessTest] = useState(false);
 
@@ -113,6 +114,42 @@ function App() {
         id: 'situps',
         title: 'Sit-up Champion',
         description: 'Complete 100 sit-ups today',
+        target: 100,
+        current: 0,
+        completed: false,
+        rewards: { exp: 1, strength: 1, endurance: 1 }
+      },
+      {
+        id: 'squats',
+        title: 'Squat Master',
+        description: 'Complete 100 squats today',
+        target: 100,
+        current: 0,
+        completed: false,
+        rewards: { exp: 1, strength: 1, endurance: 1 }
+      },
+      {
+        id: 'planks',
+        title: 'Plank Champion',
+        description: 'Hold plank for 100 seconds today',
+        target: 100,
+        current: 0,
+        completed: false,
+        rewards: { exp: 1, strength: 1, endurance: 1 }
+      },
+      {
+        id: 'lunges',
+        title: 'Lunge Master',
+        description: 'Complete 100 lunges today',
+        target: 100,
+        current: 0,
+        completed: false,
+        rewards: { exp: 1, strength: 1, endurance: 1 }
+      },
+      {
+        id: 'swordstrikes',
+        title: 'Sword Strike Master',
+        description: 'Complete 100 sword strikes today',
         target: 100,
         current: 0,
         completed: false,
@@ -197,7 +234,7 @@ function App() {
     }
   }, [dailyQuests, currentUser]);
 
-  const handleExerciseFinish = (type: 'pushup' | 'situp', count: number) => {
+  const handleExerciseFinish = (type: 'pushup' | 'situp' | 'squat' | 'plank' | 'lunge' | 'swordstrike', count: number) => {
     if (count > 0) {
       const strengthGain = count * 0.1;
       const enduranceGain = Math.floor(count / 10) * 0.1;
@@ -210,7 +247,15 @@ function App() {
       }));
       
       // Update daily quest progress
-      const questId = type === 'pushup' ? 'pushups' : 'situps';
+      const questIdMap: Record<string, string> = {
+        'pushup': 'pushups',
+        'situp': 'situps',
+        'squat': 'squats',
+        'plank': 'planks',
+        'lunge': 'lunges',
+        'swordstrike': 'swordstrikes'
+      };
+      const questId = questIdMap[type];
       setDailyQuests(prev => {
         return prev.map(quest => {
           if (quest.id === questId && !quest.completed) {
@@ -237,7 +282,15 @@ function App() {
         });
       });
       
-      const exerciseName = type === 'pushup' ? 'push-ups' : 'sit-ups';
+      const exerciseNameMap: Record<string, string> = {
+        'pushup': 'push-ups',
+        'situp': 'sit-ups',
+        'squat': 'squats',
+        'plank': 'seconds of plank',
+        'lunge': 'lunges',
+        'swordstrike': 'sword strikes'
+      };
+      const exerciseName = exerciseNameMap[type];
       const gains = [
         `+${strengthGain.toFixed(1)} Strength`,
         enduranceGain > 0 ? `+${enduranceGain.toFixed(1)} Endurance` : null
@@ -264,10 +317,17 @@ function App() {
   };
 
   const handleStartDetection = (questId: string) => {
-    if (questId === 'pushups') {
-      setShowDetector('pushup');
-    } else if (questId === 'situps') {
-      setShowDetector('situp');
+    const detectorMap: Record<string, 'pushup' | 'situp' | 'squat' | 'plank' | 'lunge' | 'swordstrike'> = {
+      'pushups': 'pushup',
+      'situps': 'situp',
+      'squats': 'squat',
+      'planks': 'plank',
+      'lunges': 'lunge',
+      'swordstrikes': 'swordstrike'
+    };
+    const detector = detectorMap[questId];
+    if (detector) {
+      setShowDetector(detector);
     }
   };
 
@@ -394,20 +454,12 @@ function App() {
               <Camera size={20} />
               Practice
             </h3>
-            <div className="space-y-2">
-              <button
-                onClick={() => setShowDetector('pushup')}
-                className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-semibold text-sm transition-colors"
-              >
-                Push-ups
-              </button>
-              <button
-                onClick={() => setShowDetector('situp')}
-                className="w-full bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 font-semibold text-sm transition-colors"
-              >
-                Sit-ups
-              </button>
-            </div>
+            <button
+              onClick={() => setShowExerciseModal(true)}
+              className="w-full bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 font-semibold transition-colors"
+            >
+              Start Practice
+            </button>
           </div>
         </div>
 
@@ -431,6 +483,82 @@ function App() {
           </div>
         </div>
       </div>
+
+      {showExerciseModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full p-6">
+            <h2 className="text-2xl font-bold mb-6 text-gray-800">Choose Exercise</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <button
+                onClick={() => {
+                  setShowDetector('pushup');
+                  setShowExerciseModal(false);
+                }}
+                className="bg-blue-600 text-white px-6 py-4 rounded-lg hover:bg-blue-700 font-semibold transition-colors flex flex-col items-center gap-2"
+              >
+                <span className="text-2xl">💪</span>
+                <span>Push-ups</span>
+              </button>
+              <button
+                onClick={() => {
+                  setShowDetector('situp');
+                  setShowExerciseModal(false);
+                }}
+                className="bg-purple-600 text-white px-6 py-4 rounded-lg hover:bg-purple-700 font-semibold transition-colors flex flex-col items-center gap-2"
+              >
+                <span className="text-2xl">🧘</span>
+                <span>Sit-ups</span>
+              </button>
+              <button
+                onClick={() => {
+                  setShowDetector('squat');
+                  setShowExerciseModal(false);
+                }}
+                className="bg-orange-600 text-white px-6 py-4 rounded-lg hover:bg-orange-700 font-semibold transition-colors flex flex-col items-center gap-2"
+              >
+                <span className="text-2xl">🦵</span>
+                <span>Squats</span>
+              </button>
+              <button
+                onClick={() => {
+                  setShowDetector('plank');
+                  setShowExerciseModal(false);
+                }}
+                className="bg-yellow-600 text-white px-6 py-4 rounded-lg hover:bg-yellow-700 font-semibold transition-colors flex flex-col items-center gap-2"
+              >
+                <span className="text-2xl">🏋️</span>
+                <span>Plank</span>
+              </button>
+              <button
+                onClick={() => {
+                  setShowDetector('lunge');
+                  setShowExerciseModal(false);
+                }}
+                className="bg-pink-600 text-white px-6 py-4 rounded-lg hover:bg-pink-700 font-semibold transition-colors flex flex-col items-center gap-2"
+              >
+                <span className="text-2xl">🚶</span>
+                <span>Lunges</span>
+              </button>
+              <button
+                onClick={() => {
+                  setShowDetector('swordstrike');
+                  setShowExerciseModal(false);
+                }}
+                className="bg-red-600 text-white px-6 py-4 rounded-lg hover:bg-red-700 font-semibold transition-colors flex flex-col items-center gap-2"
+              >
+                <span className="text-2xl">⚔️</span>
+                <span>Sword Strike</span>
+              </button>
+            </div>
+            <button
+              onClick={() => setShowExerciseModal(false)}
+              className="mt-6 w-full bg-gray-300 text-gray-800 px-6 py-3 rounded-lg hover:bg-gray-400 font-semibold transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {showDetector && (
         <ExerciseDetector
