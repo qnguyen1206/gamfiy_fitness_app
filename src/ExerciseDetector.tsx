@@ -4,7 +4,7 @@ import * as tf from '@tensorflow/tfjs';
 import { Camera, StopCircle } from 'lucide-react';
 
 interface ExerciseDetectorProps {
-  exerciseType: 'pushup' | 'situp';
+  exerciseType: 'pushup' | 'situp' | 'squat' | 'plank' | 'lunge' | 'swordstrike';
   onCountUpdate: (count: number) => void;
   onFinish: (count: number) => void;
   onClose: () => void;
@@ -18,9 +18,11 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
   const countRef = useRef(0);
   const [status, setStatus] = useState<string>('Initializing...');
   const [hasError, setHasError] = useState(false);
+  const [formFeedback, setFormFeedback] = useState<string>('');
   const detectorRef = useRef<poseDetection.PoseDetector | null>(null);
   const animationFrameRef = useRef<number>();
   const exerciseStateRef = useRef<'up' | 'down'>('up');
+  const confidenceThreshold = 0.5; // Minimum confidence for keypoint detection
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -61,7 +63,7 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
         setStatus('Loading pose detection model...');
         const model = poseDetection.SupportedModels.MoveNet;
         const detectorConfig = {
-          modelType: 'SinglePose.Lightning'
+          modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER
         };
         
         const detector = await poseDetection.createDetector(model, detectorConfig);
@@ -114,10 +116,10 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
           ctx.strokeStyle = '#00FF00';
           ctx.lineWidth = 2;
           keypoints.forEach(keypoint => {
-            if (keypoint.score && keypoint.score > 0.3) {
+            if (keypoint.score && keypoint.score > confidenceThreshold) {
               ctx.beginPath();
               ctx.arc(keypoint.x, keypoint.y, 5, 0, 2 * Math.PI);
-              ctx.fillStyle = '#FF0000';
+              ctx.fillStyle = keypoint.score > 0.7 ? '#00FF00' : '#FFA500'; // Green for high confidence, orange for medium
               ctx.fill();
             }
           });
@@ -133,9 +135,16 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
           const leftKnee = keypoints.find(kp => kp.name === 'left_knee');
 
           if (exerciseType === 'pushup') {
-            // Push-up detection logic
+            // Push-up detection logic with confidence checking
             if (leftShoulder && leftElbow && leftWrist && 
-                rightShoulder && rightElbow && rightWrist) {
+                rightShoulder && rightElbow && rightWrist &&
+                leftShoulder.score! > confidenceThreshold &&
+                leftElbow.score! > confidenceThreshold &&
+                leftWrist.score! > confidenceThreshold &&
+                rightShoulder.score! > confidenceThreshold &&
+                rightElbow.score! > confidenceThreshold &&
+                rightWrist.score! > confidenceThreshold) {
+              
               const leftArmAngle = calculateAngle(
                 { x: leftShoulder.x, y: leftShoulder.y },
                 { x: leftElbow.x, y: leftElbow.y },
@@ -148,6 +157,15 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
               );
               const avgAngle = (leftArmAngle + rightArmAngle) / 2;
 
+              // Form feedback
+              if (Math.abs(leftArmAngle - rightArmAngle) > 30) {
+                setFormFeedback('⚠️ Keep arms balanced');
+              } else if (avgAngle < 160 && avgAngle > 100) {
+                setFormFeedback('💪 Good form!');
+              } else {
+                setFormFeedback('');
+              }
+
               if (avgAngle < 100 && exerciseStateRef.current === 'up') {
                 exerciseStateRef.current = 'down';
                 setStatus('Down position');
@@ -159,10 +177,16 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
                 onCountUpdate(newCount);
                 setStatus(`Push-up ${newCount}!`);
               }
+            } else {
+              setFormFeedback('📷 Position yourself fully in frame');
             }
           } else if (exerciseType === 'situp') {
-            // Sit-up detection logic
-            if (leftShoulder && leftHip && leftKnee) {
+            // Sit-up detection logic with confidence checking
+            if (leftShoulder && leftHip && leftKnee &&
+                leftShoulder.score! > confidenceThreshold &&
+                leftHip.score! > confidenceThreshold &&
+                leftKnee.score! > confidenceThreshold) {
+              
               const bodyAngle = calculateAngle(
                 { x: leftShoulder.x, y: leftShoulder.y },
                 { x: leftHip.x, y: leftHip.y },
@@ -172,6 +196,7 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
               if (bodyAngle < 50 && exerciseStateRef.current === 'up') {
                 exerciseStateRef.current = 'down';
                 setStatus('Down position');
+                setFormFeedback('');
               } else if (bodyAngle > 80 && exerciseStateRef.current === 'down') {
                 exerciseStateRef.current = 'up';
                 countRef.current += 1;
@@ -179,7 +204,150 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
                 setCount(newCount);
                 onCountUpdate(newCount);
                 setStatus(`Sit-up ${newCount}!`);
+                setFormFeedback('💪 Great rep!');
+              } else if (bodyAngle > 50 && bodyAngle < 80) {
+                setFormFeedback('Keep going!');
               }
+            } else {
+              setFormFeedback('📷 Make sure upper body is visible');
+            }
+          } else if (exerciseType === 'squat') {
+            // Squat detection logic with confidence checking
+            const rightHip = keypoints.find(kp => kp.name === 'right_hip');
+            const rightKnee = keypoints.find(kp => kp.name === 'right_knee');
+            const rightAnkle = keypoints.find(kp => kp.name === 'right_ankle');
+
+            if (leftHip && leftKnee && rightHip && rightKnee && rightAnkle &&
+                leftHip.score! > confidenceThreshold &&
+                leftKnee.score! > confidenceThreshold &&
+                rightHip.score! > confidenceThreshold &&
+                rightKnee.score! > confidenceThreshold &&
+                rightAnkle.score! > confidenceThreshold) {
+              
+              const leftLegAngle = calculateAngle(
+                { x: leftHip.x, y: leftHip.y },
+                { x: leftKnee.x, y: leftKnee.y },
+                { x: leftKnee.x, y: leftKnee.y + 100 }
+              );
+              const rightLegAngle = calculateAngle(
+                { x: rightHip.x, y: rightHip.y },
+                { x: rightKnee.x, y: rightKnee.y },
+                { x: rightAnkle.x, y: rightAnkle.y }
+              );
+              const avgAngle = (leftLegAngle + rightLegAngle) / 2;
+
+              if (avgAngle < 110 && avgAngle > 70) {
+                setFormFeedback('💪 Good depth!');
+              } else if (avgAngle < 70) {
+                setFormFeedback('⚠️ Too low - protect your knees');
+              } else {
+                setFormFeedback('');
+              }
+
+              if (avgAngle < 110 && exerciseStateRef.current === 'up') {
+                exerciseStateRef.current = 'down';
+                setStatus('Squat down');
+              } else if (avgAngle > 160 && exerciseStateRef.current === 'down') {
+                exerciseStateRef.current = 'up';
+                countRef.current += 1;
+                const newCount = countRef.current;
+                setCount(newCount);
+                onCountUpdate(newCount);
+                setStatus(`Squat ${newCount}!`);
+              }
+            } else {
+              setFormFeedback('📷 Stand facing the camera');
+            }
+          } else if (exerciseType === 'plank') {
+            // Plank hold time detection
+            if (leftShoulder && leftHip && leftKnee) {
+              const bodyAngle = calculateAngle(
+                { x: leftShoulder.x, y: leftShoulder.y },
+                { x: leftHip.x, y: leftHip.y },
+                { x: leftKnee.x, y: leftKnee.y }
+              );
+
+              // Plank is held when body is straight (160-180 degrees)
+              if (bodyAngle > 160 && bodyAngle < 200) {
+                if (exerciseStateRef.current === 'up') {
+                  exerciseStateRef.current = 'down';
+                  countRef.current += 1;
+                  const newCount = countRef.current;
+                  setCount(newCount);
+                  onCountUpdate(newCount);
+                }
+                setStatus('Holding plank...');
+              } else {
+                exerciseStateRef.current = 'up';
+                setStatus('Get into plank position');
+              }
+            }
+          } else if (exerciseType === 'lunge') {
+            // Lunge detection logic
+            const rightHip = keypoints.find(kp => kp.name === 'right_hip');
+            const rightKnee = keypoints.find(kp => kp.name === 'right_knee');
+            const rightAnkle = keypoints.find(kp => kp.name === 'right_ankle');
+
+            if (leftKnee && leftHip && rightKnee) {
+              const leftLegAngle = calculateAngle(
+                { x: leftHip.x, y: leftHip.y },
+                { x: leftKnee.x, y: leftKnee.y },
+                { x: leftKnee.x, y: leftKnee.y + 100 }
+              );
+
+              if (leftLegAngle < 100 && exerciseStateRef.current === 'up') {
+                exerciseStateRef.current = 'down';
+                setStatus('Lunge down');
+              } else if (leftLegAngle > 160 && exerciseStateRef.current === 'down') {
+                exerciseStateRef.current = 'up';
+                countRef.current += 1;
+                const newCount = countRef.current;
+                setCount(newCount);
+                onCountUpdate(newCount);
+                setStatus(`Lunge ${newCount}!`);
+              }
+            }
+          } else if (exerciseType === 'swordstrike') {
+            // Sword strike detection logic
+            const rightShoulder = keypoints.find(kp => kp.name === 'right_shoulder');
+            const rightElbow = keypoints.find(kp => kp.name === 'right_elbow');
+            const rightWrist = keypoints.find(kp => kp.name === 'right_wrist');
+            const nose = keypoints.find(kp => kp.name === 'nose');
+
+            if (rightShoulder && rightElbow && rightWrist && nose &&
+                rightShoulder.score! > confidenceThreshold &&
+                rightElbow.score! > confidenceThreshold &&
+                rightWrist.score! > confidenceThreshold) {
+              
+              const armAngle = calculateAngle(
+                { x: rightShoulder.x, y: rightShoulder.y },
+                { x: rightElbow.x, y: rightElbow.y },
+                { x: rightWrist.x, y: rightWrist.y }
+              );
+
+              // Check if wrist is above shoulder (raised position)
+              const wristAboveShoulder = rightWrist.y < rightShoulder.y - 50;
+              // Check if wrist is below shoulder (strike position)
+              const wristBelowShoulder = rightWrist.y > rightShoulder.y + 30;
+
+              if (wristAboveShoulder && armAngle > 140) {
+                setFormFeedback('⚔️ Ready to strike!');
+              }
+
+              if (wristAboveShoulder && exerciseStateRef.current === 'down') {
+                exerciseStateRef.current = 'up';
+                setStatus('Raised - ready!');
+              } else if (wristBelowShoulder && exerciseStateRef.current === 'up') {
+                exerciseStateRef.current = 'down';
+                countRef.current += 1;
+                const newCount = countRef.current;
+                setCount(newCount);
+                onCountUpdate(newCount);
+                setStatus(`Strike ${newCount}!`);
+                setFormFeedback('💥 Good strike!');
+              }
+            } else {
+              setFormFeedback('📷 Stand side-facing to camera');
             }
           }
         }
@@ -215,7 +383,11 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
       <div className="bg-white rounded-lg max-w-6xl w-full max-h-[95vh] overflow-y-auto">
         <div className="p-6">
           <h2 className="text-2xl font-bold mb-4">
-            {exerciseType === 'pushup' ? 'Push-up' : 'Sit-up'} Detection
+            {exerciseType === 'pushup' ? 'Push-up' : 
+             exerciseType === 'situp' ? 'Sit-up' : 
+             exerciseType === 'squat' ? 'Squat' : 
+             exerciseType === 'plank' ? 'Plank' : 
+             exerciseType === 'lunge' ? 'Lunge' : 'Sword Strike'} Detection
           </h2>
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -284,6 +456,11 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
                     <p className="text-lg font-semibold">{status}</p>
                   </div>
                 </div>
+                {formFeedback && (
+                  <div className="mt-3 p-3 bg-blue-100 border border-blue-300 rounded-lg text-center">
+                    <p className="text-blue-900 font-semibold">{formFeedback}</p>
+                  </div>
+                )}
               </div>
 
               {/* Tips */}
@@ -296,11 +473,35 @@ const ExerciseDetector: React.FC<ExerciseDetectorProps> = ({ exerciseType, onCou
                       <li>Keep your body straight during the exercise</li>
                       <li>Go down until arms are at 90 degrees</li>
                     </>
-                  ) : (
+                  ) : exerciseType === 'situp' ? (
                     <>
                       <li>Lie on your back with knees bent</li>
                       <li>Make sure your upper body is visible</li>
                       <li>Lift your torso towards your knees</li>
+                    </>
+                  ) : exerciseType === 'squat' ? (
+                    <>
+                      <li>Stand facing the camera</li>
+                      <li>Keep feet shoulder-width apart</li>
+                      <li>Lower until thighs are parallel to ground</li>
+                    </>
+                  ) : exerciseType === 'plank' ? (
+                    <>
+                      <li>Position yourself side-facing to camera</li>
+                      <li>Keep body straight from head to heels</li>
+                      <li>Hold the position - each second counts!</li>
+                    </>
+                  ) : exerciseType === 'lunge' ? (
+                    <>
+                      <li>Stand facing the camera</li>
+                      <li>Step forward and lower your hips</li>
+                      <li>Keep front knee at 90 degrees</li>
+                    </>
+                  ) : (
+                    <>
+                      <li>Stand side-facing to camera</li>
+                      <li>Raise your arm above your head</li>
+                      <li>Strike down in a swift motion</li>
                     </>
                   )}
                 </ul>
