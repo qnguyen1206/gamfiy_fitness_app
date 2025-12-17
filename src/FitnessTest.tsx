@@ -7,11 +7,17 @@ interface FitnessTestProps {
   username: string;
 }
 
+type ExercisePhase = 'intro' | 'pushups' | 'situps' | 'squats' | 'plank' | 'lunges' | 'swordstrikes' | 'results';
+
 const FitnessTest: React.FC<FitnessTestProps> = ({ onComplete, username }) => {
-  const [phase, setPhase] = useState<'intro' | 'pushups' | 'situps' | 'results'>('intro');
-  const [timeRemaining, setTimeRemaining] = useState(300); // 5 minutes in seconds
+  const [phase, setPhase] = useState<ExercisePhase>('intro');
+  const [timeRemaining, setTimeRemaining] = useState(180); // 3 minutes per exercise
   const [pushupCount, setPushupCount] = useState(0);
   const [situpCount, setSitupCount] = useState(0);
+  const [squatCount, setSquatCount] = useState(0);
+  const [plankCount, setPlankCount] = useState(0);
+  const [lungeCount, setLungeCount] = useState(0);
+  const [swordstrikeCount, setSwordstrikeCount] = useState(0);
   const [showDetector, setShowDetector] = useState(false);
 
   // Timer countdown
@@ -22,9 +28,8 @@ const FitnessTest: React.FC<FitnessTestProps> = ({ onComplete, username }) => {
       setTimeRemaining(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          // Move to results when time is up
+          // Stop at 0 and wait for user to click Next
           setShowDetector(false);
-          setPhase('results');
           return 0;
         }
         return prev - 1;
@@ -41,7 +46,7 @@ const FitnessTest: React.FC<FitnessTestProps> = ({ onComplete, username }) => {
   };
 
   const calculateStats = () => {
-    const totalReps = pushupCount + situpCount;
+    const totalReps = pushupCount + situpCount + squatCount + plankCount + lungeCount + swordstrikeCount;
     const strength = totalReps * 0.1;
     const endurance = Math.floor(totalReps / 10) * 0.1;
     return { strength, endurance };
@@ -49,40 +54,84 @@ const FitnessTest: React.FC<FitnessTestProps> = ({ onComplete, username }) => {
 
   const handleStartTest = () => {
     setPhase('pushups');
-    setTimeRemaining(300);
+    setTimeRemaining(180);
     setShowDetector(true);
   };
 
-  const handlePushupFinish = (count: number) => {
-    setPushupCount(prev => prev + count);
+  const handleExerciseFinish = (count: number) => {
+    switch (phase) {
+      case 'pushups':
+        setPushupCount(prev => prev + count);
+        break;
+      case 'situps':
+        setSitupCount(prev => prev + count);
+        break;
+      case 'squats':
+        setSquatCount(prev => prev + count);
+        break;
+      case 'plank':
+        setPlankCount(prev => prev + count);
+        break;
+      case 'lunges':
+        setLungeCount(prev => prev + count);
+        break;
+      case 'swordstrikes':
+        setSwordstrikeCount(prev => prev + count);
+        break;
+    }
     setShowDetector(false);
   };
 
-  const handleSitupFinish = (count: number) => {
-    setSitupCount(prev => prev + count);
-    setShowDetector(false);
+  const getNextPhase = (currentPhase: ExercisePhase): ExercisePhase => {
+    const phaseOrder: ExercisePhase[] = ['pushups', 'situps', 'squats', 'plank', 'lunges', 'swordstrikes', 'results'];
+    const currentIndex = phaseOrder.indexOf(currentPhase);
+    return phaseOrder[currentIndex + 1] || 'results';
   };
 
   const handleNextPhase = () => {
-    if (phase === 'pushups') {
-      setPhase('situps');
+    const nextPhase = getNextPhase(phase);
+    setPhase(nextPhase);
+    if (nextPhase !== 'results') {
+      setTimeRemaining(180); // Reset to 3 minutes for next exercise
       setShowDetector(true);
-    } else if (phase === 'situps') {
-      setPhase('results');
     }
   };
 
   const handleSkipExercise = () => {
-    if (phase === 'pushups') {
-      setPhase('situps');
-    } else if (phase === 'situps') {
-      setPhase('results');
+    const nextPhase = getNextPhase(phase);
+    setPhase(nextPhase);
+    if (nextPhase !== 'results') {
+      setTimeRemaining(180); // Reset to 3 minutes for next exercise
     }
   };
 
   const handleCompleteTest = () => {
     const stats = calculateStats();
     onComplete(stats);
+  };
+
+  const getExerciseType = (phase: ExercisePhase): 'pushup' | 'situp' | 'squat' | 'plank' | 'lunge' | 'swordstrike' | undefined => {
+    switch (phase) {
+      case 'pushups': return 'pushup';
+      case 'situps': return 'situp';
+      case 'squats': return 'squat';
+      case 'plank': return 'plank';
+      case 'lunges': return 'lunge';
+      case 'swordstrikes': return 'swordstrike';
+      default: return undefined;
+    }
+  };
+
+  const getExerciseLabel = (phase: ExercisePhase): string => {
+    switch (phase) {
+      case 'pushups': return 'Push-ups';
+      case 'situps': return 'Sit-ups';
+      case 'squats': return 'Squats';
+      case 'plank': return 'Plank';
+      case 'lunges': return 'Lunges';
+      case 'swordstrikes': return 'Sword Strikes';
+      default: return '';
+    }
   };
 
   if (phase === 'intro') {
@@ -105,15 +154,19 @@ const FitnessTest: React.FC<FitnessTestProps> = ({ onComplete, username }) => {
             <ul className="space-y-3 text-gray-700">
               <li className="flex items-start gap-2">
                 <span className="text-orange-600 font-bold">•</span>
-                <span><strong>Duration:</strong> 5 minutes total</span>
+                <span><strong>Duration:</strong> 3 minutes per exercise (18 minutes total)</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-orange-600 font-bold">•</span>
-                <span><strong>Exercises:</strong> Push-ups and Sit-ups</span>
+                <span><strong>Exercises:</strong> Push-ups, Sit-ups, Squats, Plank, Lunges, and Sword Strikes</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-orange-600 font-bold">•</span>
                 <span><strong>Scoring:</strong> Each rep = +0.1 Strength, Every 10 reps = +0.1 Endurance</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-orange-600 font-bold">•</span>
+                <span><strong>Navigation:</strong> Click "Next" after each exercise to continue</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-orange-600 font-bold">•</span>
@@ -154,14 +207,30 @@ const FitnessTest: React.FC<FitnessTestProps> = ({ onComplete, username }) => {
             <p className="text-gray-600">Great work, {username}!</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-6 mb-6">
-            <div className="bg-blue-50 p-6 rounded-lg border-2 border-blue-200 text-center">
-              <p className="text-sm text-gray-600 mb-1">Push-ups</p>
-              <p className="text-4xl font-bold text-blue-600">{pushupCount}</p>
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-200 text-center">
+              <p className="text-xs text-gray-600 mb-1">Push-ups</p>
+              <p className="text-3xl font-bold text-blue-600">{pushupCount}</p>
             </div>
-            <div className="bg-purple-50 p-6 rounded-lg border-2 border-purple-200 text-center">
-              <p className="text-sm text-gray-600 mb-1">Sit-ups</p>
-              <p className="text-4xl font-bold text-purple-600">{situpCount}</p>
+            <div className="bg-purple-50 p-4 rounded-lg border-2 border-purple-200 text-center">
+              <p className="text-xs text-gray-600 mb-1">Sit-ups</p>
+              <p className="text-3xl font-bold text-purple-600">{situpCount}</p>
+            </div>
+            <div className="bg-green-50 p-4 rounded-lg border-2 border-green-200 text-center">
+              <p className="text-xs text-gray-600 mb-1">Squats</p>
+              <p className="text-3xl font-bold text-green-600">{squatCount}</p>
+            </div>
+            <div className="bg-yellow-50 p-4 rounded-lg border-2 border-yellow-200 text-center">
+              <p className="text-xs text-gray-600 mb-1">Plank</p>
+              <p className="text-3xl font-bold text-yellow-600">{plankCount}</p>
+            </div>
+            <div className="bg-pink-50 p-4 rounded-lg border-2 border-pink-200 text-center">
+              <p className="text-xs text-gray-600 mb-1">Lunges</p>
+              <p className="text-3xl font-bold text-pink-600">{lungeCount}</p>
+            </div>
+            <div className="bg-indigo-50 p-4 rounded-lg border-2 border-indigo-200 text-center">
+              <p className="text-xs text-gray-600 mb-1">Strikes</p>
+              <p className="text-3xl font-bold text-indigo-600">{swordstrikeCount}</p>
             </div>
           </div>
 
@@ -190,7 +259,7 @@ const FitnessTest: React.FC<FitnessTestProps> = ({ onComplete, username }) => {
     );
   }
 
-  // Push-ups or Sit-ups phase
+  // Exercise phase
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 p-4">
       <div className="max-w-4xl mx-auto">
@@ -207,19 +276,35 @@ const FitnessTest: React.FC<FitnessTestProps> = ({ onComplete, username }) => {
             <div className="text-right">
               <p className="text-sm text-gray-600">Current Phase</p>
               <p className="text-xl font-bold text-blue-600">
-                {phase === 'pushups' ? 'Push-ups' : 'Sit-ups'}
+                {getExerciseLabel(phase)}
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-blue-50 p-4 rounded-lg text-center">
-              <p className="text-sm text-gray-600">Push-ups</p>
-              <p className="text-2xl font-bold text-blue-600">{pushupCount}</p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-blue-50 p-3 rounded-lg text-center">
+              <p className="text-xs text-gray-600">Push-ups</p>
+              <p className="text-xl font-bold text-blue-600">{pushupCount}</p>
             </div>
-            <div className="bg-purple-50 p-4 rounded-lg text-center">
-              <p className="text-sm text-gray-600">Sit-ups</p>
-              <p className="text-2xl font-bold text-purple-600">{situpCount}</p>
+            <div className="bg-purple-50 p-3 rounded-lg text-center">
+              <p className="text-xs text-gray-600">Sit-ups</p>
+              <p className="text-xl font-bold text-purple-600">{situpCount}</p>
+            </div>
+            <div className="bg-green-50 p-3 rounded-lg text-center">
+              <p className="text-xs text-gray-600">Squats</p>
+              <p className="text-xl font-bold text-green-600">{squatCount}</p>
+            </div>
+            <div className="bg-yellow-50 p-3 rounded-lg text-center">
+              <p className="text-xs text-gray-600">Plank</p>
+              <p className="text-xl font-bold text-yellow-600">{plankCount}</p>
+            </div>
+            <div className="bg-pink-50 p-3 rounded-lg text-center">
+              <p className="text-xs text-gray-600">Lunges</p>
+              <p className="text-xl font-bold text-pink-600">{lungeCount}</p>
+            </div>
+            <div className="bg-indigo-50 p-3 rounded-lg text-center">
+              <p className="text-xs text-gray-600">Strikes</p>
+              <p className="text-xl font-bold text-indigo-600">{swordstrikeCount}</p>
             </div>
           </div>
         </div>
@@ -227,12 +312,18 @@ const FitnessTest: React.FC<FitnessTestProps> = ({ onComplete, username }) => {
         {/* Exercise Instructions */}
         <div className="bg-white rounded-lg shadow-lg p-6">
           <h2 className="text-2xl font-bold mb-4">
-            {phase === 'pushups' ? 'Push-up Test' : 'Sit-up Test'}
+            {getExerciseLabel(phase)} Test
           </h2>
           <p className="text-gray-700 mb-4">
-            Do as many {phase === 'pushups' ? 'push-ups' : 'sit-ups'} as you can. 
-            Click "Start Detection" to begin, or skip if you want to move to the next exercise.
+            Do as many {getExerciseLabel(phase).toLowerCase()} as you can in 3 minutes. 
+            When time runs out, click "Next" to move to the next exercise.
           </p>
+
+          <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200 mb-4">
+            <p className="text-sm text-yellow-800">
+              <strong>⏰ Tip:</strong> You have 3 minutes for this exercise. Click "Next" when you're ready to move on, or wait for the timer to reach 0.
+            </p>
+          </div>
 
           <div className="flex gap-4">
             {!showDetector && (
@@ -247,7 +338,7 @@ const FitnessTest: React.FC<FitnessTestProps> = ({ onComplete, username }) => {
                   onClick={handleNextPhase}
                   className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 font-semibold transition-colors"
                 >
-                  {phase === 'pushups' ? 'Next: Sit-ups' : 'Finish Test'}
+                  {phase === 'swordstrikes' ? 'Finish Test' : `Next: ${getExerciseLabel(getNextPhase(phase))}`}
                 </button>
                 <button
                   onClick={handleSkipExercise}
@@ -261,11 +352,11 @@ const FitnessTest: React.FC<FitnessTestProps> = ({ onComplete, username }) => {
         </div>
       </div>
 
-      {showDetector && (
+      {showDetector && getExerciseType(phase) && (
         <ExerciseDetector
-          exerciseType={phase === 'pushups' ? 'pushup' : 'situp'}
+          exerciseType={getExerciseType(phase)!}
           onCountUpdate={() => {}}
-          onFinish={phase === 'pushups' ? handlePushupFinish : handleSitupFinish}
+          onFinish={handleExerciseFinish}
           onClose={() => setShowDetector(false)}
         />
       )}
